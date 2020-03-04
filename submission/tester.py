@@ -93,7 +93,9 @@ async def get_status(sess: aiohttp.ClientSession, submissionId: str) -> dict:
             "id": context["submissionId"],
             "score": context["score"],
             "status": context["status"],
-            "time": context["timestamp"]
+            "time": context["timestamp"],
+            "memoryUsage": context["memoryUsage"],
+            "runTime": context["runTime"]
         }
 
 
@@ -144,6 +146,53 @@ def get_result(session: aiohttp.ClientSession, submissionIds: list, submission_t
     return result
 
 
+def simple_filter_unit(target: dict, filters: dict) -> list:
+    target_keys = ["MaxMemoryUsage", "MaxRunTime", "score", "status"]
+    target_keys = list(set(target_keys).intersection(
+        set(list(filters.keys()))))
+
+    failure_list = []
+    for k in target_keys:
+        if k in target:
+            if str(k).find("Max") != -1:
+                key = str(k).replace("Max", "", 1)
+                fit_ks = ["Max"+key, "Min"+key]
+                tar_k = key
+                tar_k[0] = tar_k[0].lower()
+
+                if filters[filters[1]] <= target[tar_k] and target[tar_k] <= filters[filters[0]]:
+                    pass
+                else:
+                    failure_list.append(
+                        f"failure on comparing {tar_k} : data is not in the sequence , current is {target[tar_k]}")
+            else:
+                if target[k] != filters[k]:
+                    failure_list.append(
+                        f"failure on comparing {k} : data is not equal , current is {target[k]}")
+        else:
+            failure_list.append(
+                f"failure on comparing {k} : data does not exsist")
+    return failure_list
+
+def simple_filter(raw_data: dict, filters: dict) -> (dict , bool):
+    overall_sucess = True
+    for sid in list(raw_data.keys()):
+        if type(raw_data[sid]) == str:
+            continue
+        logging.debug(f"raw_data[sid]:{raw_data[sid]}")
+        src_file = raw_data[sid]["src"]
+        if src_file in filters:
+            fil = filters[src_file]
+            fails = simple_filter_unit(raw_data[sid] , fil)
+            if len(fails)!=0:
+                overall_sucess = False
+                raw_data[sid].update({"success":False})
+                raw_data[sid].update({"fails":fails})
+            else:
+                raw_data[sid].update({"success":True})
+    return raw_data, overall_sucess
+
+
 @submission.command()
 @click.option("-c", "--count", "count", type=int, default=1, help="the request count to send")
 @click.option("-l", "--lang", "lang", type=int, default=0, help="the language of submission(non-checked)")
@@ -153,15 +202,15 @@ def get_result(session: aiohttp.ClientSession, submissionIds: list, submission_t
 @click.option("--cmp", "compare", type=click.Path(file_okay=True), default="", help="compare the result with given json file")
 @click.option("--maxTime", "max_time", type=float, default=3600, help="the maxium waiting time for waiting all the result(default is 3600 sec)")
 @click.option("-p", "--pid", "problem_id", type=int, default=1, help="the problem id you want to submit")
-@click.option("--cfg", "config", type=click.Path(file_okay=True), default="", help="the config file of this test")
-@click.option("--fname", "fname" ,type=str , default="result.json" , help="the filename of result(default is result.json)")
-def pressure_tester(count: int, lang: int, code: str, rand: bool, delay: float, compare: str, max_time: float, problem_id: int , config:str , fname:str):
+@click.option("--cfg", "config", type=click.Path(file_okay=True), default="", help="the config file of this test , which will ignores \"-c\",\"-l\",\"-f\",\"-p\",\"--cmp\"")
+@click.option("--fname", "fname", type=str, default="result.json", help="the filename of result(default is result.json)")
+def pressure_tester(count: int, lang: int, code: str, rand: bool, delay: float, compare: str, max_time: float, problem_id: int, config: str, fname: str):
     '''
     mount a submission pressure test on given condiction
     '''
     ses = get_async_session()
     assert ses != None
-
+    assert config == ""  # since it was not implemented :P
     DELAY_SEC = delay
     codes = []
 
@@ -193,5 +242,12 @@ def pressure_tester(count: int, lang: int, code: str, rand: bool, delay: float, 
     if code != "":
         for i in range(len(submissionIds)):
             result[submissionIds[i]].update({"src": codes[i]})
+    if compare != "":
+        with open(compare , "r") as f:
+            filters = f.read()
+            filters = dict(json.loads(filters))
+            result , all_pass = simple_filter(result , filters)
+            result.update({"passTest":all_pass})
+
     with open(fname, "w") as f:
         f.write(json.dumps(result, indent=4))
