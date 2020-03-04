@@ -2,12 +2,16 @@ import click
 import asyncio
 import logging
 import aiohttp
+import random
 import time
 import json
 from zipfile import is_zipfile
-from cores.login import get_async_session, get_api_base,kill_async_session
+from cores.login import get_async_session, get_api_base, kill_async_session
+import os.path as path
+from os import listdir
 
 DELAY_SEC = 1.0
+
 
 @click.group()
 def submission():
@@ -73,7 +77,8 @@ async def _submit(sess: aiohttp.ClientSession,
 
 async def get_status(sess: aiohttp.ClientSession, submissionId: str) -> dict:
     API_BASE = get_api_base()
-    await asyncio.sleep(DELAY_SEC)
+    if DELAY_SEC != 0:
+        await asyncio.sleep(DELAY_SEC)
     async with sess.get(f"{API_BASE}/submission/{submissionId}") as resp:
         logging.debug("===get_status===")
         context = await resp.text()
@@ -92,7 +97,7 @@ async def get_status(sess: aiohttp.ClientSession, submissionId: str) -> dict:
         }
 
 
-def get_result(session: aiohttp.ClientSession, submissionIds: list , submission_time_limit={} , MAX_TIMEOUT = 3600) -> dict:
+def get_result(session: aiohttp.ClientSession, submissionIds: list, submission_time_limit={}, MAX_TIMEOUT=3600) -> dict:
     loop = asyncio.get_event_loop()
     result = {}
     for submissionId in submissionIds:
@@ -104,11 +109,11 @@ def get_result(session: aiohttp.ClientSession, submissionIds: list , submission_
         for submissionId in submissionIds:
             if result[submissionId] == None:
                 if submissionId in submission_time_limit and time.time() - begin_time >= submission_time_limit[submissionId]:
-                    result[submissionId] = "timeout...QQ"
+                    result[submissionId] = {"status": "timeout...QQ"}
                     continue
                 tasks.append(
                     asyncio.ensure_future(get_status(session, submissionId)))
-        
+
         loop.run_until_complete(asyncio.wait(tasks))
 
         for task in tasks:
@@ -122,7 +127,10 @@ def get_result(session: aiohttp.ClientSession, submissionIds: list , submission_
 
         if time.time() - MAX_TIMEOUT >= begin_time:
             logging.info("time's up")
-            result.update({"status": "timeout"})
+            for k in list(result.keys()):
+                result[k] = {}
+            result.update({"status": "timeout expire max waiting time"})
+
             return result
 
         fn_flag = True
@@ -137,29 +145,53 @@ def get_result(session: aiohttp.ClientSession, submissionIds: list , submission_
 
 
 @submission.command()
-@click.argument("count", type=int, default=1)
-@click.argument("lang", type=int, default=0)
-@click.argument("problem_id", type=int, default=1)
-@click.argument("code", type=click.Path(file_okay=True), default="")
-@click.option("--pressure",
-              "-p",
-              help="mount an submission pressure test base on given count")
-def pressure_tester(count: int, lang: int, problem_id: int, code: str,
-                    pressure):
+@click.option("-c", "--count", "count", type=int, default=1, help="the request count to send")
+@click.option("-l", "--lang", "lang", type=int, default=0, help="the language of submission(non-checked)")
+@click.option("-f", "--file", "code", type=click.Path(file_okay=True), default="", help="the submission source file")
+@click.option("-r", "--random", "rand", type=bool, default=False, help="send the submission in random order")
+@click.option("-d", "--delay", "delay", type=float, default=1.0, help="set the delay of checking up function(which will affect the accurrency of testing)")
+@click.option("--cmp", "compare", type=click.Path(file_okay=True), default="", help="compare the result with given json file")
+@click.option("--maxTime", "max_time", type=float, default=3600, help="the maxium waiting time for waiting all the result(default is 3600 sec)")
+@click.option("-p", "--pid", "problem_id", type=int, default=1, help="the problem id you want to submit")
+@click.option("--cfg", "config", type=click.Path(file_okay=True), default="", help="the config file of this test")
+@click.option("--fname", "fname" ,type=str , default="result.json" , help="the filename of result(default is result.json)")
+def pressure_tester(count: int, lang: int, code: str, rand: bool, delay: float, compare: str, max_time: float, problem_id: int , config:str , fname:str):
+    '''
+    mount a submission pressure test on given condiction
+    '''
     ses = get_async_session()
     assert ses != None
+
+    DELAY_SEC = delay
+    codes = []
+
+    if code != "" and path.isdir(code):
+        codes = listdir(code)
+        for i in range(len(codes)):
+            codes[i] = f"{code}/" + codes[i]
+        assert len(codes) >= count
+    else:
+        for i in range(count):
+            codes.append(code)
+
+    if rand:
+        random.shuffle(codes)
 
     tasks = []
     for i in range(count):
         tasks.append(
-            asyncio.ensure_future(_submit(ses, lang, problem_id, code)))
+            asyncio.ensure_future(_submit(ses, lang, problem_id, codes[i])))
 
     loop = asyncio.get_event_loop()
     loop.run_until_complete(asyncio.wait(tasks))
     submissionIds = []
     for task in tasks:
         submissionIds.append(task.result())
-    result = get_result(ses, submissionIds)
+    result = get_result(ses, submissionIds, MAX_TIMEOUT=max_time)
     kill_async_session(ses)
-    with open("result.json", "w") as f:
+
+    if code != "":
+        for i in range(len(submissionIds)):
+            result[submissionIds[i]].update({"src": codes[i]})
+    with open(fname, "w") as f:
         f.write(json.dumps(result, indent=4))
