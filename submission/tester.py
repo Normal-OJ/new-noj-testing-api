@@ -258,7 +258,7 @@ def full_filter(raw_data: dict, filters: dict) -> (dict, bool):
 @click.option("-d", "--delay", "delay", type=float, default=1.0, help="set the delay of checking up function(which will affect the accurrency of testing)")
 @click.option("--maxTime", "max_time", type=float, default=3600, help="the maxium waiting time for waiting all the result(default is 3600 sec)")
 @click.option("-p", "--pid", "problem_id", type=int, default=1, help="the problem id you want to submit")
-@click.option("--cfg", "config", type=click.Path(file_okay=True), default="", help="the config file of this test , which will ignores \"-c\",\"-l\",\"-f\",\"-p\",\"--cmp\"")
+@click.option("--cfg", "config", type=click.Path(file_okay=True), default="", help="the config file of this test , which will may overwrite some other options , see wiki for more detailed")
 @click.option("--fname", "fname", type=str, default="result.json", help="the filename of result(default is result.json)")
 def pressure_tester(count: int, lang: int, code: str, rand: bool, delay: float, config: str, max_time: float, problem_id: int, fname: str):
     '''
