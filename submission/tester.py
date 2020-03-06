@@ -32,6 +32,8 @@ async def _submit(sess: aiohttp.ClientSession,
     Args:
         code: the code path
     '''
+    logging.debug(
+        f"sending submission with lang id: {lang} , problem id :{problem_id}")
     API_BASE = get_api_base()
     logging.debug('===submission===')
     langs = ['c', 'cpp', 'py']
@@ -95,7 +97,8 @@ async def get_status(sess: aiohttp.ClientSession, submissionId: str) -> dict:
             "status": context["status"],
             "time": context["timestamp"],
             "memoryUsage": context["memoryUsage"],
-            "runTime": context["runTime"]
+            "runTime": context["runTime"],
+            "tasks": context["tasks"]
         }
 
 
@@ -111,7 +114,8 @@ def get_result(session: aiohttp.ClientSession, submissionIds: list, submission_t
         for submissionId in submissionIds:
             if result[submissionId] == None:
                 if submissionId in submission_time_limit and time.time() - begin_time >= submission_time_limit[submissionId]:
-                    result[submissionId] = {"status": "timeout...QQ"}
+                    result[submissionId] = {
+                        "wait_status": f"timeout expire {submission_time_limit[submissionId]} sec...QQ"}
                     continue
                 tasks.append(
                     asyncio.ensure_future(get_status(session, submissionId)))
@@ -130,8 +134,9 @@ def get_result(session: aiohttp.ClientSession, submissionIds: list, submission_t
         if time.time() - MAX_TIMEOUT >= begin_time:
             logging.info("time's up")
             for k in list(result.keys()):
-                result[k] = {}
-            result.update({"status": "timeout expire max waiting time"})
+                if result[k] == None:
+                    result[k] = {}
+            result.update({"wait_status": "timeout expire max waiting time"})
 
             return result
 
@@ -146,35 +151,87 @@ def get_result(session: aiohttp.ClientSession, submissionIds: list, submission_t
     return result
 
 
-def simple_filter_unit(target: dict, filters: dict) -> list:
-    target_keys = ["MaxMemoryUsage", "MaxRunTime", "score", "status"]
+def __fuzz_compare_unit(domain: list, target: dict, filters: dict) -> list:
+    logging.debug(f"target:{target}")
+    logging.debug(f"filters:{filters}")
+    target_keys = list(set(domain))
     target_keys = list(set(target_keys).intersection(
         set(list(filters.keys()))))
-
     failure_list = []
     for k in target_keys:
         if k in target:
-            if str(k).find("Max") != -1:
-                key = str(k).replace("Max", "", 1)
-                fit_ks = ["Max"+key, "Min"+key]
-                tar_k = key
-                tar_k[0] = tar_k[0].lower()
+            if target[k] != filters[k]:
+                failure_list.append(
+                    {"key": k, "real": target[k], "type": "abs", "expect": filters[k]})
+        elif str(k).find("Max") != -1:
+            key = str(k).replace("Max", "", 1)
+            fit_ks = ["Max"+key, "Min"+key]
+            tar_k = key[0].lower() + key[1:]
+            if tar_k not in target:
+                failure_list.append(
+                    {"type": "miss", "key": tar_k})
+                continue
 
-                if filters[filters[1]] <= target[tar_k] and target[tar_k] <= filters[filters[0]]:
-                    pass
-                else:
-                    failure_list.append(
-                        f"failure on comparing {tar_k} : data is not in the sequence , current is {target[tar_k]}")
+            if filters[fit_ks[1]] <= target[tar_k] and target[tar_k] <= filters[fit_ks[0]]:
+                pass
             else:
-                if target[k] != filters[k]:
-                    failure_list.append(
-                        f"failure on comparing {k} : data is not equal , current is {target[k]}")
+                failure_list.append(
+                    {"key": tar_k, "real": target[tar_k], "type": "seq", "expect": (filters[fit_ks[1]], filters[fit_ks[0]])})
+
         else:
             failure_list.append(
-                f"failure on comparing {k} : data does not exsist")
+                {"type": "miss", "key": k})
     return failure_list
 
-def simple_filter(raw_data: dict, filters: dict) -> (dict , bool):
+
+def print_fails(fails: list) -> list:
+    p_f = []
+    for it in fails:
+        if it["type"] == "miss":
+            p_f.append(
+                f"failure on {it['key']} : can not found data with key {it['key']}")
+        elif it["type"] == "abs":
+            p_f.append(
+                f"failure on {it['key']} : expected {it['expect']} but got {it['real']}")
+        elif it["type"] == "seq":
+            p_f.append(
+                f"failure on {it['key']} : expected between {it['expect'][0]} and {it['expect'][1]} but got {it['real']}")
+        else:
+            raise Exception(f"Undefind Property {it['type']}")
+    return p_f
+
+
+def filter_unit(target: dict, filters: dict) -> list:
+    failure_list = []
+    f_items = __fuzz_compare_unit(
+        ["MaxMemoryUsage", "MaxRunTime", "score", "status"], target, filters)
+
+    failure_list.extend(print_fails(f_items))
+    if "tasks" in filters:
+        for i in list(filters["tasks"].keys()):
+            els = str(i).split(":")
+            task = int(els[0])
+            case = int(els[1])
+            subtask = {}
+            logging.debug(f"target:{target}")
+            try:
+                subtask = target["tasks"][task]["cases"][case]
+            except (IndexError,KeyError):
+                failure_list.append(
+                    f"failure on task {task} case {case}: data does not exist")
+                continue
+
+            if subtask != {}:
+                sub_fails = __fuzz_compare_unit(
+                    ["stdout", "stderr", "exitCode", "MaxExecTime", "MaxMemoryUsage", "status"], subtask, filters["tasks"][i])
+                for i in range(len(sub_fails)):
+                    sub_fails[i]["key"] = f"task {task} case {case} {sub_fails[i]['key']}"
+
+                failure_list.extend(print_fails(sub_fails))
+    return failure_list
+
+
+def full_filter(raw_data: dict, filters: dict) -> (dict, bool):
     overall_sucess = True
     for sid in list(raw_data.keys()):
         if type(raw_data[sid]) == str:
@@ -183,71 +240,103 @@ def simple_filter(raw_data: dict, filters: dict) -> (dict , bool):
         src_file = raw_data[sid]["src"]
         if src_file in filters:
             fil = filters[src_file]
-            fails = simple_filter_unit(raw_data[sid] , fil)
-            if len(fails)!=0:
+            fails = filter_unit(raw_data[sid], fil)
+            if len(fails) != 0:
                 overall_sucess = False
-                raw_data[sid].update({"success":False})
-                raw_data[sid].update({"fails":fails})
+                raw_data[sid].update({"success": False})
+                raw_data[sid].update({"fails": fails})
             else:
-                raw_data[sid].update({"success":True})
+                raw_data[sid].update({"success": True})
     return raw_data, overall_sucess
 
 
 @submission.command()
-@click.option("-c", "--count", "count", type=int, default=1, help="the request count to send")
+@click.option("-c", "--count", "count", type=int, default=0, help="the request count to send")
 @click.option("-l", "--lang", "lang", type=int, default=0, help="the language of submission(non-checked)")
 @click.option("-f", "--file", "code", type=click.Path(file_okay=True), default="", help="the submission source file")
 @click.option("-r", "--random", "rand", type=bool, default=False, help="send the submission in random order")
 @click.option("-d", "--delay", "delay", type=float, default=1.0, help="set the delay of checking up function(which will affect the accurrency of testing)")
-@click.option("--cmp", "compare", type=click.Path(file_okay=True), default="", help="compare the result with given json file")
 @click.option("--maxTime", "max_time", type=float, default=3600, help="the maxium waiting time for waiting all the result(default is 3600 sec)")
 @click.option("-p", "--pid", "problem_id", type=int, default=1, help="the problem id you want to submit")
 @click.option("--cfg", "config", type=click.Path(file_okay=True), default="", help="the config file of this test , which will ignores \"-c\",\"-l\",\"-f\",\"-p\",\"--cmp\"")
 @click.option("--fname", "fname", type=str, default="result.json", help="the filename of result(default is result.json)")
-def pressure_tester(count: int, lang: int, code: str, rand: bool, delay: float, compare: str, max_time: float, problem_id: int, config: str, fname: str):
+def pressure_tester(count: int, lang: int, code: str, rand: bool, delay: float, config: str, max_time: float, problem_id: int, fname: str):
     '''
     mount a submission pressure test on given condiction
     '''
     ses = get_async_session()
     assert ses != None
-    assert config == ""  # since it was not implemented :P
     DELAY_SEC = delay
     codes = []
 
     if code != "" and path.isdir(code):
         codes = listdir(code)
         for i in range(len(codes)):
-            codes[i] = f"{code}/" + codes[i]
+            codes[i] = (lang, problem_id, f"{code}/" + codes[i])
         assert len(codes) >= count
     else:
         for i in range(count):
-            codes.append(code)
+            codes.append((lang, problem_id, code))
+
+    filters = {}
+    if config != "":
+        with open(config, "r") as f:
+            logging.debug(f"open {config}")
+            filters = f.read()
+            filters = dict(json.loads(filters))
+        codes = []
+        for k in filters.keys():
+            lt = lang
+            pid = problem_id
+            if "languageType" in filters[k]:
+                lt = filters[k]["languageType"]
+            if "problem_id" in filters[k]:
+                pid = filters[k]["problem_id"]
+
+            if "counts" in filters[k]:
+                for _ in range(filters[k]["counts"]-1):
+                    codes.append((lt, pid, k))
+            codes.append((lt, pid, k))
+
+        if count == 0:
+            count = len(codes)
 
     if rand:
         random.shuffle(codes)
 
     tasks = []
+    logging.debug(f"total count to send : {count}")
     for i in range(count):
         tasks.append(
-            asyncio.ensure_future(_submit(ses, lang, problem_id, codes[i])))
+            asyncio.ensure_future(_submit(ses, codes[i][0], codes[i][1], codes[i][2])))
+
+    # purify codes to store only src of codes
+    for i in range(len(codes)):
+        codes[i] = codes[i][2]
 
     loop = asyncio.get_event_loop()
     loop.run_until_complete(asyncio.wait(tasks))
     submissionIds = []
     for task in tasks:
         submissionIds.append(task.result())
-    result = get_result(ses, submissionIds, MAX_TIMEOUT=max_time)
+
+    get_result_filiter = {}
+    if filters != {}:
+        for i in range(len(submissionIds)):
+            if codes[i] in filters and "expireTime" in filters[codes[i]]:
+                get_result_filiter.update(
+                    {submissionIds[i]: filters[codes[i]]["expireTime"]})
+
+    result = get_result(
+        ses, submissionIds, submission_time_limit=get_result_filiter, MAX_TIMEOUT=max_time)
     kill_async_session(ses)
 
-    if code != "":
+    if code != "" or config != "":
         for i in range(len(submissionIds)):
             result[submissionIds[i]].update({"src": codes[i]})
-    if compare != "":
-        with open(compare , "r") as f:
-            filters = f.read()
-            filters = dict(json.loads(filters))
-            result , all_pass = simple_filter(result , filters)
-            result.update({"passTest":all_pass})
+    if config != "":
+        result, all_pass = full_filter(result, filters)
+        result.update({"passTest": all_pass and "wait_status" not in result})
 
     with open(fname, "w") as f:
         f.write(json.dumps(result, indent=4))

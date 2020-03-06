@@ -1,8 +1,10 @@
 {
     "c-code.zip": {
-        "src_code":"this.cpp",
-        "problem_id":87,
         "languageType":87,
+        
+        "counts":87,
+        "expireTime":87,
+        "problem_id":87,
         "MaxMemoryUsage":8787,
         "MinMemoryUsage":87,
         "MaxRunTime":8787,
@@ -10,7 +12,7 @@
         "score":87,
         "status":87,
         "tasks":{
-            "87":{
+            "87:87":{
                 "stdout": "Hello, 2\\n",
                 "stderr": "",
                 "exitCode": 0,
@@ -20,7 +22,6 @@
                 "MinMemoryUsage": 87,
                 "status": "WA"
             }
-        },
-        "user":{"displayedName": "admin", "md5": "f1911eb6f6121582b644a7eb968461bc", "username": "first_admin"}
+        }
     }
 }

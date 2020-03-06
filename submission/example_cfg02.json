@@ -1,0 +1,31 @@
+{
+    "testing/c-code.zip": {
+        "MaxMemoryUsage": 8787,
+        "MinMemoryUsage": 87,
+        "MaxRunTime": 8787,
+        "MinRunTime": 87,
+        "expireTime": 3,
+        "score": 87,
+        "status": 87,
+        "languageType": 0,
+        "tasks": {
+            "0:0": {
+                "stdout": "Hello, 2\n",
+                "stderr": "",
+                "exitCode": 0,
+                "MaxExecTime": 8787,
+                "MinExecTime": 87,
+                "MaxMemoryUsage": 1450,
+                "MinMemoryUsage": 87,
+                "status": "WA"
+            }
+        }
+    },
+    "testing/cpp-code.zip": {
+        "counts": 3,
+        "MaxRunTime": 8787,
+        "MinRunTime": 87,
+        "score": 87,
+        "languageType": 1
+    }
+}
