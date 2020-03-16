@@ -196,3 +196,17 @@ def seq_handwritten_grade(sess:requests.Session , sid:str , score:int)->bool:
             return False
         logging.info(f"raw resp:{resp.text}")
         return True
+
+def seq_handwritten_download(sess:requests.Session , sid:str , fname:str = "something.pdf")->bool:
+    base = get_api_base() + f"/submission/{sid}/pdf/upload"
+    logging.debug(f"base: {base}")
+    with sess.get(base) as resp:
+        if resp.status_code != 200:
+            logging.warn(f"handwritten download got status code :{resp.status_code}")
+            logging.warn(f"raw resp:{resp.text}")
+            return False
+        if resp.content!=None:
+            return False
+        with open(fname , "wb") as fp:
+            fp.write(resp.content)
+    return True
