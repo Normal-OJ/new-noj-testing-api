@@ -1,6 +1,6 @@
 import click
 import logging
-from submission import tester
+from submission import pressure_tester, rejudge , handwriteen
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -13,5 +13,5 @@ def command_entry():
 
 
 if __name__ == "__main__":
-    command_entry.add_command(tester.submission)
+    command_entry.add_command(pressure_tester.submission)
     command_entry()
