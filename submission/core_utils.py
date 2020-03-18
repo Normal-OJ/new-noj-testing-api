@@ -1,5 +1,6 @@
 from zipfile import is_zipfile
 import aiohttp
+import asyncio
 import json
 import requests
 import logging
@@ -22,7 +23,7 @@ async def async_submit(sess: aiohttp.ClientSession,
         f"sending async submission with lang id: {lang} , problem id :{problem_id}")
     API_BASE = get_api_base()
     logging.debug('===submission===')
-    langs = ['c', 'cpp', 'py']
+    langs = ['c', 'cpp', 'py' , 'hw']
 
     # create submission
     async with sess.post(f'{API_BASE}/submission',
@@ -197,15 +198,17 @@ def seq_handwritten_grade(sess:requests.Session , sid:str , score:int)->bool:
         logging.info(f"raw resp:{resp.text}")
         return True
 
-def seq_handwritten_download(sess:requests.Session , sid:str , fname:str = "something.pdf")->bool:
-    base = get_api_base() + f"/submission/{sid}/pdf/upload"
+def seq_handwritten_download(sess:requests.Session , sid:str , fname:str = "something.pdf" , item_type:int = 0)->bool:
+    items = ["upload" , "comment"]
+    base = get_api_base() + f"/submission/{sid}/pdf/{items[item_type]}"
     logging.debug(f"base: {base}")
     with sess.get(base) as resp:
         if resp.status_code != 200:
-            logging.warn(f"handwritten download got status code :{resp.status_code}")
+            logging.warn(f"handwritten download {items[item_type]} got status code :{resp.status_code}")
             logging.warn(f"raw resp:{resp.text}")
             return False
-        if resp.content!=None:
+        if resp.content==None:
+            logging.warn(f"raw resp:{resp.text}")
             return False
         with open(fname , "wb") as fp:
             fp.write(resp.content)

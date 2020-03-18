@@ -44,13 +44,14 @@ async def _get_async_session(username , passwd = "") -> aiohttp.ClientSession:
     return None
 
 
-def get_async_session(username="first_admin" , passwd ="") -> aiohttp.ClientSession:
+def get_async_session(username="first_admin") -> aiohttp.ClientSession:
     if cfg == {}:
         read_cfg()
     global ASYNC_SESS
     if ASYNC_SESS is not None:
         return ASYNC_SESS
     loop = asyncio.get_event_loop()
+    passwd = get_user_passwd(username)
     ASYNC_SESS = loop.run_until_complete(_get_async_session(username , passwd))
     return ASYNC_SESS
 

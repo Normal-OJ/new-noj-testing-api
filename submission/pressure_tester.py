@@ -161,6 +161,7 @@ def full_filter(raw_data: dict, filters: dict) -> (dict, bool):
 
 
 @submission.command()
+@click.option("-u" ,"--user" ,"user" , type=str , default="first_admin" , help="the user to login as")
 @click.option("-c", "--count", "count", type=int, default=0, help="the request count to send")
 @click.option("-l", "--lang", "lang", type=int, default=0, help="the language of submission(non-checked)")
 @click.option("-f", "--file", "code", type=click.Path(file_okay=True), default="", help="the submission source file")
@@ -170,11 +171,11 @@ def full_filter(raw_data: dict, filters: dict) -> (dict, bool):
 @click.option("-p", "--pid", "problem_id", type=int, default=1, help="the problem id you want to submit")
 @click.option("--cfg", "config", type=click.Path(file_okay=True), default="", help="the config file of this test , which will may overwrite some other options , see wiki for more detailed")
 @click.option("--fname", "fname", type=str, default="result.json", help="the filename of result(default is result.json)")
-def pressure_tester(count: int, lang: int, code: str, rand: bool, delay: float, config: str, max_time: float, problem_id: int, fname: str):
+def pressure_tester(user:str, count: int, lang: int, code: str, rand: bool, delay: float, config: str, max_time: float, problem_id: int, fname: str):
     '''
     mount a submission pressure test on given condiction
     '''
-    ses = get_async_session()
+    ses = get_async_session(user)
     assert ses != None
     DELAY_SEC = delay
     codes = []
@@ -247,6 +248,6 @@ def pressure_tester(count: int, lang: int, code: str, rand: bool, delay: float, 
     if config != "":
         result, all_pass = full_filter(result, filters)
         result.update({"passTest": all_pass and "wait_status" not in result})
-
+        assert result["passTest"]
     with open(fname, "w") as f:
         f.write(json.dumps(result, indent=4))
