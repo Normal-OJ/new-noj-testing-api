@@ -131,3 +131,5 @@ dmypy.json
 # user config
 *config.json
 result.json
+testdata/*
+testdata
