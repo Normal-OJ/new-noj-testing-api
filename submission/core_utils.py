@@ -6,12 +6,17 @@ import requests
 import logging
 from time import sleep
 from cores.login import get_api_base
+from cores.util import as_sync
+
 DELAY_SEC = 1.0
 
-async def async_submit(sess: aiohttp.ClientSession,
-                       lang,
-                       problem_id,
-                       code=None) -> str:
+
+async def async_submit(
+    sess: aiohttp.ClientSession,
+    lang,
+    problem_id,
+    code=None,
+) -> str:
     '''
     submit asynchronously `problem_id` with language `lang`
     if `code` is "", use default source decided by `lang`
@@ -20,24 +25,25 @@ async def async_submit(sess: aiohttp.ClientSession,
         code: the code path
     '''
     logging.debug(
-        f"sending async submission with lang id: {lang} , problem id :{problem_id}")
+        f"sending async submission with lang id: {lang} , problem id :{problem_id}"
+    )
     API_BASE = get_api_base()
     logging.debug('===submission===')
-    langs = ['c', 'cpp', 'py' , 'hw']
-
+    langs = ['c', 'cpp', 'py', 'hw']
     # create submission
-    async with sess.post(f'{API_BASE}/submission',
-                         json={
-                             'languageType': lang,
-                             'problemId': problem_id
-                         }) as resp:
+    async with sess.post(
+        f'{API_BASE}/submission',
+        json={
+            'languageType': lang,
+            'problemId': problem_id
+        },
+    ) as resp:
         rj = await resp.json()
         rc = resp.status
-        logging.debug(f"create submission return code:{rc}")
+        logging.debug(f"create submission return code: {rc}")
         logging.debug(rj)
         rj = rj['data']
         assert rc == 200
-
         # open code file
         if code is "":
             # use default
@@ -49,22 +55,26 @@ async def async_submit(sess: aiohttp.ClientSession,
             # if it is the path string
             if 'read' not in code:
                 code = open(code, 'rb')
-
         form = aiohttp.FormData(quote_fields=False)
         form.add_field("code", code, content_type="multipart/form-data")
         # upload source
-        async with sess.put(f'{API_BASE}/submission/{rj["submissionId"]}',
-                            data=form) as resp2:
+        async with sess.put(
+            f'{API_BASE}/submission/{rj["submissionId"]}',
+            data=form,
+        ) as resp2:
             status_code = resp2.status
             status_text = await resp2.text()
             logging.debug(status_code)
             logging.debug(status_text)
             assert resp2.status == 200, resp2.status
             logging.debug('===end===')
-            return rj["submissionId"]
+        return rj["submissionId"]
 
 
-async def async_get_status(sess: aiohttp.ClientSession, submissionId: str) -> dict:
+async def async_get_status(
+    sess: aiohttp.ClientSession,
+    submissionId: str,
+) -> dict:
     API_BASE = get_api_base()
     if DELAY_SEC != 0:
         await asyncio.sleep(DELAY_SEC)
@@ -89,7 +99,12 @@ async def async_get_status(sess: aiohttp.ClientSession, submissionId: str) -> di
         }
 
 
-def seq_submit(sess: requests.Session, lang: int, problem_id: int , code: "") -> str:
+def seq_submit(
+    sess: requests.Session,
+    lang: int,
+    problem_id: int,
+    code: str,
+) -> str:
     API_BASE = get_api_base()
     '''
     submit `problem_id` with language `lang`
@@ -138,7 +153,8 @@ def seq_submit(sess: requests.Session, lang: int, problem_id: int , code: "") ->
     assert resp.status_code == 200
     logging.info('===end===')
 
-def seq_get_status(sess: requests.Session, submissionId: str)->dict:
+
+def seq_get_status(sess: requests.Session, submissionId: str) -> dict:
     API_BASE = get_api_base()
     with sess.get(f"{API_BASE}/submission/{submissionId}") as resp:
         logging.debug("===get_status===")
@@ -159,12 +175,14 @@ def seq_get_status(sess: requests.Session, submissionId: str)->dict:
             "tasks": context["tasks"]
         }
 
-async def async_rejudge(sess:aiohttp.ClientSession , submission_id:str):
+
+async def async_rejudge(sess: aiohttp.ClientSession, submission_id: str):
     API_BASE = get_api_base()
     if DELAY_SEC != 0:
         await asyncio.sleep(DELAY_SEC)
-    
-    async with sess.get(f"{API_BASE}/submission/{submission_id}/rejudge") as resp:
+
+    async with sess.get(
+            f"{API_BASE}/submission/{submission_id}/rejudge") as resp:
         logging.debug("===async rejudge===")
         context = await resp.text()
         logging.debug(f"raw text:{context}")
@@ -173,11 +191,12 @@ async def async_rejudge(sess:aiohttp.ClientSession , submission_id:str):
         assert resp.status == 200
         logging.debug("======end ======")
 
-def seq_rejudge(sess:requests.Session , submission_id:str):
+
+def seq_rejudge(sess: requests.Session, submission_id: str):
     API_BASE = get_api_base()
     if DELAY_SEC != 0:
         sleep(DELAY_SEC)
-    
+
     with sess.get(f"{API_BASE}/submission/{submission_id}/rejudge") as resp:
         logging.debug("===seq rejudge===")
         context = resp.content
@@ -186,30 +205,41 @@ def seq_rejudge(sess:requests.Session , submission_id:str):
         assert resp.status == 200
         logging.debug("======end ======")
 
-def seq_handwritten_grade(sess:requests.Session , sid:str , score:int)->bool:
+
+def seq_handwritten_grade(sess: requests.Session, sid: str,
+                          score: int) -> bool:
     base = get_api_base() + f"/submission/{sid}/grade"
     logging.debug(f"base: {base}")
     headers = {'Content-Type': 'application/json'}
-    with sess.put(base , headers=headers , data=json.dumps({"score":score})) as resp:
+    with sess.put(base, headers=headers, data=json.dumps({"score":
+                                                          score})) as resp:
         if resp.status_code != 200:
-            logging.warn(f"handwritten update score got status code :{resp.status_code}")
+            logging.warn(
+                f"handwritten update score got status code :{resp.status_code}"
+            )
             logging.warn(f"raw resp:{resp.text}")
             return False
         logging.info(f"raw resp:{resp.text}")
         return True
 
-def seq_handwritten_download(sess:requests.Session , sid:str , fname:str = "something.pdf" , item_type:int = 0)->bool:
-    items = ["upload" , "comment"]
+
+def seq_handwritten_download(sess: requests.Session,
+                             sid: str,
+                             fname: str = "something.pdf",
+                             item_type: int = 0) -> bool:
+    items = ["upload", "comment"]
     base = get_api_base() + f"/submission/{sid}/pdf/{items[item_type]}"
     logging.debug(f"base: {base}")
     with sess.get(base) as resp:
         if resp.status_code != 200:
-            logging.warn(f"handwritten download {items[item_type]} got status code :{resp.status_code}")
+            logging.warn(
+                f"handwritten download {items[item_type]} got status code :{resp.status_code}"
+            )
             logging.warn(f"raw resp:{resp.text}")
             return False
-        if resp.content==None:
+        if resp.content == None:
             logging.warn(f"raw resp:{resp.text}")
             return False
-        with open(fname , "wb") as fp:
+        with open(fname, "wb") as fp:
             fp.write(resp.content)
     return True

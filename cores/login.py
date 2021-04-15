@@ -3,9 +3,11 @@ import requests
 import json
 import logging
 import asyncio
+
 cfg = {}
 ASYNC_SESS = None
 SEQ_SESS = None
+
 
 def read_cfg():
     with open("cores/config.json", "r") as f:
@@ -28,20 +30,28 @@ def get_api_base() -> str:
     return cfg["API_BASE"]
 
 
-async def _get_async_session(username , passwd = "") -> aiohttp.ClientSession:
+async def _get_async_session(
+    username: str,
+    passwd: str = "",
+) -> aiohttp.ClientSession:
     if passwd == "":
         passwd = get_user_passwd(username)
     ses = aiohttp.ClientSession()
-    async with ses.post(f"{get_api_base()}/auth/session",
-                        json={
-                            'username': username,
-                            'password': passwd
-                        }) as resp:
+    async with ses.post(
+            f"{get_api_base()}/auth/session",
+            json={
+                'username': username,
+                'password': passwd,
+            },
+    ) as resp:
         txt = await resp.text()
-        logging.debug(f"[login raw]{txt}")
+        logging.debug(f"[login raw] {txt}")
         assert resp.status == 200
-        return ses
-    return None
+    return ses
+
+
+async def get_session_async(username: str):
+    return await _get_async_session(username)
 
 
 def get_async_session(username="first_admin") -> aiohttp.ClientSession:
@@ -50,9 +60,8 @@ def get_async_session(username="first_admin") -> aiohttp.ClientSession:
     global ASYNC_SESS
     if ASYNC_SESS is not None:
         return ASYNC_SESS
-    loop = asyncio.get_event_loop()
     passwd = get_user_passwd(username)
-    ASYNC_SESS = loop.run_until_complete(_get_async_session(username , passwd))
+    ASYNC_SESS = asyncio.run(_get_async_session(username, passwd))
     return ASYNC_SESS
 
 
@@ -78,10 +87,11 @@ def get_session(username="first_admin") -> requests.Session:
     SEQ_SESS = sess
     return sess
 
-async def _kill_async_session(ses:aiohttp.ClientSession):
+
+async def _kill_async_session(ses: aiohttp.ClientSession):
     await ses.close()
 
-def kill_async_session(ses:aiohttp.ClientSession):
-    loop=asyncio.get_event_loop()
+
+def kill_async_session(ses: aiohttp.ClientSession):
+    loop = asyncio.get_event_loop()
     loop.run_until_complete(_kill_async_session(ses))
-    

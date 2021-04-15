@@ -1,8 +1,9 @@
 import click
 import logging
-from submission import pressure_tester, rejudge , handwriteen
+from submission import pressure_tester, rejudge, handwriteen
 
 logging.basicConfig(level=logging.DEBUG)
+# logging.basicConfig(level=logging.INFO)
 
 
 @click.group()
