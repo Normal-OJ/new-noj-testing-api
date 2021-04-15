@@ -40,35 +40,35 @@ async def async_submit(
     ) as resp:
         rj = await resp.json()
         rc = resp.status
-        logging.debug(f"create submission return code: {rc}")
-        logging.debug(rj)
-        rj = rj['data']
-        assert rc == 200
-        # open code file
-        if code is "":
-            # use default
-            code = open(f'{langs[lang]}-code.zip', 'rb')
-        else:
-            # check zip
-            if not is_zipfile(code):
-                logging.warning('you are submitting a non-zip file.')
-            # if it is the path string
-            if 'read' not in code:
-                code = open(code, 'rb')
-        form = aiohttp.FormData(quote_fields=False)
-        form.add_field("code", code, content_type="multipart/form-data")
-        # upload source
-        async with sess.put(
-            f'{API_BASE}/submission/{rj["submissionId"]}',
-            data=form,
-        ) as resp2:
-            status_code = resp2.status
-            status_text = await resp2.text()
-            logging.debug(status_code)
-            logging.debug(status_text)
-            assert resp2.status == 200, resp2.status
-            logging.debug('===end===')
-        return rj["submissionId"]
+    logging.debug(f"create submission return code: {rc}")
+    logging.debug(rj)
+    rj = rj['data']
+    assert rc == 200
+    # open code file
+    if code == "":
+        # use default
+        code = open(f'{langs[lang]}-code.zip', 'rb')
+    else:
+        # check zip
+        if not is_zipfile(code):
+            logging.warning('you are submitting a non-zip file.')
+        # if it is the path string
+        if isinstance(code, str):
+            code = open(code, 'rb')
+    form = aiohttp.FormData(quote_fields=False)
+    form.add_field("code", code, content_type="multipart/form-data")
+    # upload source
+    async with sess.put(
+        f'{API_BASE}/submission/{rj["submissionId"]}',
+        data=form,
+    ) as resp2:
+        status_code = resp2.status
+        status_text = await resp2.text()
+        logging.debug(status_code)
+        logging.debug(status_text)
+        assert resp2.status == 200, resp2.status
+        logging.debug('===end===')
+    return rj["submissionId"]
 
 
 async def async_get_status(

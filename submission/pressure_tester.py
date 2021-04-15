@@ -1,4 +1,3 @@
-from cores.util import as_sync
 import click
 import asyncio
 import logging
@@ -6,12 +5,12 @@ import aiohttp
 import random
 import time
 import json
-from typing import List, Tuple
+from typing import Any, Dict, List, Tuple
 from . import submission
+from cores.util import as_sync
 from .core_utils import async_get_status, async_submit
-from cores.login import get_session_async, kill_async_session
-import os.path as path
-from os import listdir
+from cores.login import get_session_async
+from pathlib import Path
 
 
 async def get_result(
@@ -123,7 +122,10 @@ def print_fails(fails: list) -> list:
     return p_f
 
 
-def filter_unit(target: dict, filters: dict) -> list:
+def filter_unit(
+    target: dict,
+    filters: dict,
+) -> list:
     failure_list = []
     f_items = __fuzz_compare_unit(
         ["MaxMemoryUsage", "MaxRunTime", "score", "status"], target, filters)
@@ -156,22 +158,27 @@ def filter_unit(target: dict, filters: dict) -> list:
     return failure_list
 
 
-def full_filter(raw_data: dict, filters: dict) -> Tuple[dict, bool]:
+def full_filter(
+    raw_data: Dict[str, Any],
+    filters: dict,
+) -> Tuple[dict, bool]:
     overall_sucess = True
-    for sid in list(raw_data.keys()):
-        if type(raw_data[sid]) == str:
+    for sid, d in raw_data.items():
+        if type(d) == str:
             continue
-        logging.debug(f"raw_data[sid]:{raw_data[sid]}")
-        src_file = raw_data[sid]["src"]
+        logging.debug(f"raw_data[{sid}]: {d}")
+        src_file = d["src"]
         if src_file in filters:
             fil = filters[src_file]
-            fails = filter_unit(raw_data[sid], fil)
+            fails = filter_unit(d, fil)
             if len(fails) != 0:
                 overall_sucess = False
-                raw_data[sid].update({"success": False})
-                raw_data[sid].update({"fails": fails})
+                d.update({
+                    "success": False,
+                    "fails": fails,
+                })
             else:
-                raw_data[sid].update({"success": True})
+                d.update({"success": True})
     return raw_data, overall_sucess
 
 
@@ -277,17 +284,15 @@ async def pressure_tester(
     assert ses != None
     global DELAY_SEC
     DELAY_SEC = delay
+    # prepare codes
     codes = []
-
-    if code != "" and path.isdir(code):
-        codes = listdir(code)
-        for i in range(len(codes)):
-            codes[i] = (lang, problem_id, f"{code}/" + codes[i])
+    if code != "" and Path(code).is_dir():
+        code_dir = Path(code)
+        for ch in code_dir.iterdir():
+            codes.append((lang, problem_id, str(ch)))
         assert len(codes) >= count
     else:
-        for i in range(count):
-            codes.append((lang, problem_id, code))
-
+        codes = [(lang, problem_id, code)] * count
     filters = {}
     if config != "":
         with open(config, "r") as f:
@@ -302,27 +307,22 @@ async def pressure_tester(
                 lt = filters[k]["languageType"]
             if "problem_id" in filters[k]:
                 pid = filters[k]["problem_id"]
-
             if "counts" in filters[k]:
                 for _ in range(filters[k]["counts"] - 1):
                     codes.append((lt, pid, k))
             codes.append((lt, pid, k))
-
         if count == 0:
             count = len(codes)
     if rand:
         random.shuffle(codes)
-
     logging.debug(f"total count to send : {count}")
-    tasks = [
-        async_submit(ses, codes[i][0], codes[i][1], codes[i][2])
-        for i in range(count)
-    ]
+    # submit to judge
+    tasks = [async_submit(ses, code[0], code[1], code[2]) for code in codes]
     # purify codes to store only src of codes
-    for i in range(len(codes)):
-        codes[i] = codes[i][2]
+    for i, c in enumerate(codes):
+        codes[i] = c[2]
     submissionIds = await asyncio.gather(*tasks)
-
+    # prepare filters to validation later
     get_result_filiter = {}
     if filters != {}:
         for i in range(len(submissionIds)):
